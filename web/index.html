@@ -22,8 +22,6 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
 
-        const DATA_DIR = "data";
-
         const getDataFile = () => {
             const params = new URLSearchParams(window.location.search);
             const candidate = params.get("file");
@@ -49,18 +47,11 @@
             }, [files, dataFile]);
 
             useEffect(() => {
-                fetch(`${DATA_DIR}/`)
-                    .then(r => r.text())
-                    .then(html => {
-                        const doc = new DOMParser().parseFromString(html, "text/html");
-                        const links = Array.from(doc.querySelectorAll("a"))
-                            .map(a => a.getAttribute("href"))
-                            .filter(Boolean)
-                            .map(href => decodeURIComponent(href.split("?")[0]))
-                            .filter(href => href.endsWith(".json") && !href.includes("/"));
-                        const unique = Array.from(new Set(links)).sort();
-                        setFiles(unique);
-                        if (!dataFile && unique.length > 0) setDataFile(unique[0]);
+                fetch("/api/sessions")
+                    .then(r => r.json())
+                    .then(fileList => {
+                        setFiles(fileList);
+                        if (!dataFile && fileList.length > 0) setDataFile(fileList[0]);
                     })
                     .catch(() => {
                         setFiles([]);
@@ -72,7 +63,7 @@
                 setLoading(true);
                 setError(null);
                 setData(null);
-                fetch(`${DATA_DIR}/${dataFile}`)
+                fetch(`/api/sessions/${dataFile}`)
                     .then(r => r.json())
                     .then(j => { setData(j); setLoading(false); })
                     .catch(e => { setError(e.message); setLoading(false); });

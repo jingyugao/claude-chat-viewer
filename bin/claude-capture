@@ -20,8 +20,8 @@ PARSER_SCRIPT="$PROJECT_ROOT/src/parser.py"
 
 shift # 移除第一个参数，剩下的传给 claude
 
-# 配置
-PROXY_PORT=8082
+# 动态获取一个随机可用端口
+PROXY_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
 CERT_PATH="$HOME/.mitmproxy/mitmproxy-ca-cert.pem"
 
 # 检查证书是否存在
@@ -29,12 +29,6 @@ if [ ! -f "$CERT_PATH" ]; then
   echo "错误: 未找到 CA 证书: $CERT_PATH"
   echo "请先运行一次 'mitmproxy' 以生成证书。"
   exit 1
-fi
-
-# 检查端口是否被占用
-if lsof -i :$PROXY_PORT > /dev/null 2>&1; then
-    echo "错误: 端口 $PROXY_PORT 已被占用，请先释放端口或修改脚本中的 PROXY_PORT。"
-    exit 1
 fi
 
 # 确保 sessions 目录存在
