@@ -4,7 +4,7 @@ import json
 import os
 import mimetypes
 
-PORT = 8000
+PORT = 8008
 WEB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web")
 SESSIONS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "sessions")
 
@@ -24,7 +24,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if self.path.startswith("/api/sessions/"):
             filename = self.path.replace("/api/sessions/", "")
             # Basic security check
-            if "/" in filename or "\" in filename:
+            if "/" in filename or "\\" in filename:
                 self.send_error(400, "Invalid filename")
                 return
             

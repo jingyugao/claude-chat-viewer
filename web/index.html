@@ -65,7 +65,56 @@
                 setData(null);
                 fetch(`/api/sessions/${dataFile}`)
                     .then(r => r.json())
-                    .then(j => { setData(j); setLoading(false); })
+                    .then(j => { 
+                        // ADAPTER: Convert raw API call list to viewer format
+                        if (Array.isArray(j)) {
+                            // Find the last successful /v1/messages call
+                            const chatCalls = j.filter(call => 
+                                call.url.includes("/v1/messages") && 
+                                call.request_body && 
+                                call.request_body.messages
+                            );
+                            
+                            if (chatCalls.length > 0) {
+                                const lastCall = chatCalls[chatCalls.length - 1];
+                                const systemPrompt = lastCall.request_body.system;
+                                const messages = [...lastCall.request_body.messages];
+                                
+                                // Append the assistant's response if available
+                                if (lastCall.response_body) {
+                                    let assistantContent = null;
+                                    
+                                    // Handle standard JSON response
+                                    if (lastCall.response_body.content) {
+                                        assistantContent = lastCall.response_body.content;
+                                    } 
+                                    // Handle reconstructed SSE text
+                                    else if (lastCall.response_body.reconstructed_text) {
+                                        assistantContent = [{ type: "text", text: lastCall.response_body.reconstructed_text }];
+                                    }
+
+                                    if (assistantContent) {
+                                        messages.push({
+                                            role: "assistant",
+                                            content: assistantContent
+                                        });
+                                    }
+                                }
+
+                                setData({
+                                    systemPrompt: Array.isArray(systemPrompt) ? systemPrompt.map(s => s.text).join("\n") : systemPrompt,
+                                    messages: messages,
+                                    tools: lastCall.request_body.tools || []
+                                });
+                            } else {
+                                setError("No chat messages found in trace.");
+                            }
+                        } else {
+                            // Fallback for legacy format
+                            setData(j); 
+                        }
+                        setLoading(false); 
+                    })
                     .catch(e => { setError(e.message); setLoading(false); });
             }, [dataFile]);
 
@@ -94,15 +143,47 @@
                 return null;
             };
 
+            const ToolList = ({ tools }) => {
+                if (!tools || tools.length === 0) return <div className="p-5 text-gray-500 italic">No tools defined.</div>;
+                
+                return (
+                    <div className="grid grid-cols-1 gap-4 p-4 bg-[#1a1a1a]">
+                        {tools.map((tool, idx) => (
+                            <div key={idx} className="border border-gray-700 bg-[#252526] rounded-md overflow-hidden">
+                                <div className="px-4 py-2 border-b border-gray-700 bg-[#2d2d2d] flex justify-between items-center">
+                                    <div className="font-bold text-teal-400 font-mono text-xs">{tool.name}</div>
+                                </div>
+                                <div className="p-4 space-y-3">
+                                    <div className="text-gray-300 text-[11px] leading-relaxed">{tool.description}</div>
+                                    <div className="mt-2">
+                                        <div className="text-[9px] uppercase tracking-wider text-gray-500 font-bold mb-1">Input Schema</div>
+                                        <pre className="bg-[#151515] p-2 rounded border border-gray-800 text-[10px] text-teal-200/70 font-mono overflow-x-auto">
+                                            {JSON.stringify(tool.input_schema, null, 2)}
+                                        </pre>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                );
+            };
+
             const toolDefs = getToolDefinitions();
-            const toolDefsDisplay = (() => {
-                if (toolDefs == null) {
-                    return "No tool definitions found in this file. Add <tools>...</tools> to systemPrompt or include toolDefinitions/tools fields.";
+            // Try to parse if it's a JSON string, otherwise assume it's an object or list
+            let parsedTools = [];
+            try {
+                if (typeof toolDefs === 'string') {
+                    // Try to extract JSON array if embedded in text
+                    if (toolDefs.trim().startsWith('[')) {
+                         parsedTools = JSON.parse(toolDefs);
+                    }
+                } else if (Array.isArray(toolDefs)) {
+                    parsedTools = toolDefs;
                 }
-                if (typeof toolDefs === "string") return toolDefs;
-                return JSON.stringify(toolDefs, null, 2);
-            })();
-            
+            } catch (e) {
+                console.error("Failed to parse tools", e);
+            }
+
             return (
                 <div className="flex flex-col h-full max-w-6xl mx-auto border-x border-gray-800 bg-[#1e1e1e] shadow-2xl">
                     <div className="p-4 border-b border-gray-800 bg-[#252526] flex justify-between items-center sticky top-0 z-50">
@@ -149,10 +230,15 @@
                                 <span className="flex items-center gap-2">
                                     <span className="opacity-50">{showTools ? "▼" : "▶"}</span>
                                     TOOL DEFINITIONS
+                                    <span className="ml-2 text-gray-500 text-[9px] normal-case font-normal">({parsedTools.length} tools)</span>
                                 </span>
                                 <span className="text-[9px] bg-teal-900/30 text-teal-300 px-1.5 py-0.5 rounded border border-teal-800/30">READ ONLY</span>
                             </button>
-                            {showTools && <div className="p-5 text-[11px] leading-relaxed text-gray-300 border-t border-gray-700 bg-[#171717] whitespace-pre-wrap font-mono">{toolDefsDisplay}</div>}
+                            {showTools && (
+                                <div className="border-t border-gray-700 max-h-[500px] overflow-y-auto">
+                                    <ToolList tools={parsedTools} />
+                                </div>
+                            )}
                         </div>
 
                         <div className="space-y-12 pb-10">
