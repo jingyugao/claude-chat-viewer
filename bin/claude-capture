@@ -1,0 +1,82 @@
+#!/bin/bash
+
+# 获取脚本所在目录的绝对路径，用于定位项目根目录
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# 检查参数
+if [ -z "$1" ]; then
+  echo "用法: $0 <对话名称> [claude参数...]"
+  echo "示例: $0 my-test"
+  echo "示例: $0 my-test -p '你好'"
+  exit 1
+fi
+
+SESSION_NAME="$1"
+# 路径更新为 sessions/ 目录
+OUTPUT_MITM="$PROJECT_ROOT/sessions/${SESSION_NAME}.mitm"
+OUTPUT_JSON="$PROJECT_ROOT/sessions/${SESSION_NAME}.json"
+PARSER_SCRIPT="$PROJECT_ROOT/src/parser.py"
+
+shift # 移除第一个参数，剩下的传给 claude
+
+# 配置
+PROXY_PORT=8082
+CERT_PATH="$HOME/.mitmproxy/mitmproxy-ca-cert.pem"
+
+# 检查证书是否存在
+if [ ! -f "$CERT_PATH" ]; then
+  echo "错误: 未找到 CA 证书: $CERT_PATH"
+  echo "请先运行一次 'mitmproxy' 以生成证书。"
+  exit 1
+fi
+
+# 检查端口是否被占用
+if lsof -i :$PROXY_PORT > /dev/null 2>&1; then
+    echo "错误: 端口 $PROXY_PORT 已被占用，请先释放端口或修改脚本中的 PROXY_PORT。"
+    exit 1
+fi
+
+# 确保 sessions 目录存在
+mkdir -p "$PROJECT_ROOT/sessions"
+
+echo "正在启动抓包代理 (端口 $PROXY_PORT)..."
+# 后台启动 mitmdump，静默输出
+mitmdump -p $PROXY_PORT -w "$OUTPUT_MITM" > /dev/null 2>&1 &
+MITM_PID=$!
+
+# 确保脚本退出时清理代理进程
+trap "kill $MITM_PID 2>/dev/null" EXIT
+
+# 等待代理完全启动
+sleep 2
+
+# 设置环境变量
+export HTTP_PROXY="http://127.0.0.1:$PROXY_PORT"
+export HTTPS_PROXY="http://127.0.0.1:$PROXY_PORT"
+export NODE_EXTRA_CA_CERTS="$CERT_PATH"
+
+echo "正在启动 Claude..."
+echo "----------------------------------------"
+
+# 运行 Claude
+claude "$@"
+
+echo ""
+echo "----------------------------------------"
+echo "Claude 已退出。正在停止抓包..."
+kill $MITM_PID 2>/dev/null
+wait $MITM_PID 2>/dev/null
+
+echo "正在解析抓包内容至 JSON..."
+# 运行解析脚本，临时通过环境变量传递输出路径
+# 注意：这里引用了新的 parser.py 路径
+if [ -f "$PARSER_SCRIPT" ]; then
+    OUTPUT_JSON_PATH="$OUTPUT_JSON" mitmdump -n -r "$OUTPUT_MITM" -s "$PARSER_SCRIPT" > /dev/null 2>&1
+    echo "✅ 抓包完成！"
+    echo "原始文件: $OUTPUT_MITM"
+    echo "解析数据: $OUTPUT_JSON"
+else
+    echo "⚠️  错误: 找不到解析脚本 $PARSER_SCRIPT"
+    echo "抓包文件已保存，但未解析 JSON。"
+fi
