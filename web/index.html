@@ -143,26 +143,46 @@
                 return null;
             };
 
+            const ToolItem = ({ tool }) => {
+                const [expanded, setExpanded] = useState(false);
+                return (
+                    <div className="border border-gray-700 bg-[#252526] rounded-md overflow-hidden">
+                        <div 
+                            className="px-4 py-2 border-b border-gray-700 bg-[#2d2d2d] flex justify-between items-center cursor-pointer hover:bg-[#363636] transition-colors"
+                            onClick={() => setExpanded(!expanded)}
+                        >
+                            <div className="flex items-center gap-2 overflow-hidden">
+                                <span className="opacity-50 text-[10px] w-4">{expanded ? "▼" : "▶"}</span>
+                                <div className="font-bold text-teal-400 font-mono text-xs truncate">{tool.name}</div>
+                                {!expanded && (
+                                    <div className="text-gray-500 text-[10px] truncate ml-2 max-w-[300px]">
+                                        {tool.description ? tool.description.split('\n')[0] : ''}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                        {expanded && (
+                            <div className="p-4 space-y-3 bg-[#202020]">
+                                <div className="text-gray-300 text-[11px] leading-relaxed whitespace-pre-wrap">{tool.description}</div>
+                                <div className="mt-2">
+                                    <div className="text-[9px] uppercase tracking-wider text-gray-500 font-bold mb-1">Input Schema</div>
+                                    <pre className="bg-[#151515] p-2 rounded border border-gray-800 text-[10px] text-teal-200/70 font-mono overflow-x-auto">
+                                        {JSON.stringify(tool.input_schema, null, 2)}
+                                    </pre>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                );
+            };
+
             const ToolList = ({ tools }) => {
                 if (!tools || tools.length === 0) return <div className="p-5 text-gray-500 italic">No tools defined.</div>;
                 
                 return (
-                    <div className="grid grid-cols-1 gap-4 p-4 bg-[#1a1a1a]">
+                    <div className="grid grid-cols-1 gap-2 p-4 bg-[#1a1a1a]">
                         {tools.map((tool, idx) => (
-                            <div key={idx} className="border border-gray-700 bg-[#252526] rounded-md overflow-hidden">
-                                <div className="px-4 py-2 border-b border-gray-700 bg-[#2d2d2d] flex justify-between items-center">
-                                    <div className="font-bold text-teal-400 font-mono text-xs">{tool.name}</div>
-                                </div>
-                                <div className="p-4 space-y-3">
-                                    <div className="text-gray-300 text-[11px] leading-relaxed">{tool.description}</div>
-                                    <div className="mt-2">
-                                        <div className="text-[9px] uppercase tracking-wider text-gray-500 font-bold mb-1">Input Schema</div>
-                                        <pre className="bg-[#151515] p-2 rounded border border-gray-800 text-[10px] text-teal-200/70 font-mono overflow-x-auto">
-                                            {JSON.stringify(tool.input_schema, null, 2)}
-                                        </pre>
-                                    </div>
-                                </div>
-                            </div>
+                            <ToolItem key={idx} tool={tool} />
                         ))}
                     </div>
                 );
