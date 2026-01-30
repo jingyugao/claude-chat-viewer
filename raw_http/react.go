@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 )
 
 type ToolHandler func(ctx context.Context, args json.RawMessage) (string, error)
@@ -58,25 +59,35 @@ func doReACTWithHistory(ctx context.Context, client *Client, model string, messa
 			return result, nil
 		}
 
-		for _, tc := range msg.ToolCalls {
-			handler, ok := handlers[tc.Function.Name]
-			var out string
-			if !ok {
-				out = fmt.Sprintf("tool not found: %s", tc.Function.Name)
-			} else {
-				toolOut, err := handler(ctx, json.RawMessage(tc.Function.Arguments))
-				if err != nil {
-					out = fmt.Sprintf("tool error: %v", err)
+		results := make([]Message, len(msg.ToolCalls))
+		var wg sync.WaitGroup
+		wg.Add(len(msg.ToolCalls))
+		for i, tc := range msg.ToolCalls {
+			tc := tc
+			i := i
+			go func() {
+				defer wg.Done()
+				handler, ok := handlers[tc.Function.Name]
+				var out string
+				if !ok {
+					out = fmt.Sprintf("tool not found: %s", tc.Function.Name)
 				} else {
-					out = toolOut
+					toolOut, err := handler(ctx, json.RawMessage(tc.Function.Arguments))
+					if err != nil {
+						out = fmt.Sprintf("tool error: %v", err)
+					} else {
+						out = toolOut
+					}
 				}
-			}
-			history = append(history, Message{
-				Role:       "tool",
-				ToolCallID: tc.ID,
-				Content:    out,
-			})
+				results[i] = Message{
+					Role:       "tool",
+					ToolCallID: tc.ID,
+					Content:    out,
+				}
+			}()
 		}
+		wg.Wait()
+		history = append(history, results...)
 	}
 
 	result.Messages = history
