@@ -38,3 +38,8 @@ go run . -react -prompt "请调用 now 工具给出 Asia/Shanghai 当前时间�
 - `-timeout`：请求超时
 - `-react`：开启 ReACT 循环
 - `-max-steps`：ReACT 最大步数
+
+## 渲染对话过程
+
+- `Client.Invoke(...)` 返回 `*InvokeResult`，可用 `RenderInvokeResult(invoke)` 生成一段可读的对话输出。
+- `doReACT(...)` 返回 `*ReACTResult`（包含 `Messages` / `Invokes`），可用 `RenderReACTResult(res)` 渲染完整的调用历史（含 tool_calls 与 tool 输出）。

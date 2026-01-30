@@ -110,9 +110,27 @@ Do not answer until step 3 is completed. Then answer in Chinese in 1 sentence.`
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	out, err := doReACT(ctx, client, "qwen-plus", system, "今天天气如何？", tools, handlers, 0, 12)
+	res, err := doReACT(ctx, client, "qwen-plus", system, "今天天气如何？", tools, handlers, 0, 12)
 	if err != nil {
 		t.Fatalf("doReACT error: %v", err)
 	}
-	t.Log(out)
+	if len(callOrder) < 3 {
+		t.Fatalf("callOrder = %#v, want at least 3 tool calls", callOrder)
+	}
+	if callOrder[0] != "get_current_date" || callOrder[1] != "get_current_location" || callOrder[2] != "get_weather_by_date" {
+		t.Fatalf("callOrder first 3 = %#v, want [get_current_date get_current_location get_weather_by_date]", callOrder[:3])
+	}
+	if strings.TrimSpace(weatherArgs.Date) == "" || strings.TrimSpace(weatherArgs.Location) == "" {
+		t.Fatalf("weather tool args missing fields: %+v", weatherArgs)
+	}
+	if strings.TrimSpace(res.Final) == "" {
+		t.Fatalf("empty final answer")
+	}
+	if len(res.Invokes) == 0 {
+		t.Fatalf("expected invokes trace, got none")
+	}
+	if len(res.Messages) <= res.BaseMessagesLen {
+		t.Fatalf("expected messages to grow (base=%d, got=%d)", res.BaseMessagesLen, len(res.Messages))
+	}
+	t.Log(res.Final)
 }

@@ -43,7 +43,7 @@ func TestClientInvoke_Integration_HappyPath(t *testing.T) {
 		},
 	}
 
-	resp, err := client.Invoke(ctx, ChatCompletionRequest{
+	invoke, err := client.Invoke(ctx, ChatCompletionRequest{
 		Model: "qwen-plus",
 		Messages: []Message{
 			{Role: "system", Content: "You are a tool-calling assistant. You must call the provided tool to answer. Do not answer directly."},
@@ -57,7 +57,7 @@ func TestClientInvoke_Integration_HappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke error: %v", err)
 	}
-	msg := resp.Choices[0].Message
+	msg := invoke.Response.Choices[0].Message
 	if len(msg.ToolCalls) == 0 {
 		t.Fatalf("expected tool_calls, got none (content=%q)", msg.Content)
 	}

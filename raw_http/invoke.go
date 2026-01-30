@@ -83,6 +83,12 @@ type ChatCompletionResponse struct {
 		FinishReason string  `json:"finish_reason,omitempty"`
 	} `json:"choices,omitempty"`
 
+	Usage *struct {
+		PromptTokens     int `json:"prompt_tokens,omitempty"`
+		CompletionTokens int `json:"completion_tokens,omitempty"`
+		TotalTokens      int `json:"total_tokens,omitempty"`
+	} `json:"usage,omitempty"`
+
 	Error *struct {
 		Message string      `json:"message,omitempty"`
 		Type    string      `json:"type,omitempty"`
@@ -90,7 +96,18 @@ type ChatCompletionResponse struct {
 	} `json:"error,omitempty"`
 }
 
-func (c *Client) Invoke(ctx context.Context, req ChatCompletionRequest) (*ChatCompletionResponse, error) {
+type InvokeResult struct {
+	Endpoint   string
+	StatusCode int
+	Duration   time.Duration
+
+	Request     ChatCompletionRequest
+	RawRequest  []byte
+	RawResponse []byte
+	Response    ChatCompletionResponse
+}
+
+func (c *Client) Invoke(ctx context.Context, req ChatCompletionRequest) (*InvokeResult, error) {
 	if strings.TrimSpace(c.Endpoint) == "" {
 		return nil, errors.New("empty endpoint")
 	}
@@ -102,6 +119,8 @@ func (c *Client) Invoke(ctx context.Context, req ChatCompletionRequest) (*ChatCo
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
+
+	start := time.Now()
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.Endpoint, bytes.NewReader(payload))
 	if err != nil {
@@ -121,23 +140,31 @@ func (c *Client) Invoke(ctx context.Context, req ChatCompletionRequest) (*ChatCo
 		return nil, fmt.Errorf("read response: %w", err)
 	}
 
+	out := &InvokeResult{
+		Endpoint:    c.Endpoint,
+		StatusCode:  resp.StatusCode,
+		Duration:    time.Since(start),
+		Request:     req,
+		RawRequest:  payload,
+		RawResponse: bodyBytes,
+	}
+
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		msg := strings.TrimSpace(string(bodyBytes))
 		if msg == "" {
 			msg = resp.Status
 		}
-		return nil, fmt.Errorf("http %d: %s", resp.StatusCode, msg)
+		return out, fmt.Errorf("http %d: %s", resp.StatusCode, msg)
 	}
 
-	var out ChatCompletionResponse
-	if err := json.Unmarshal(bodyBytes, &out); err != nil {
-		return nil, fmt.Errorf("decode json: %w", err)
+	if err := json.Unmarshal(bodyBytes, &out.Response); err != nil {
+		return out, fmt.Errorf("decode json: %w", err)
 	}
-	if out.Error != nil && strings.TrimSpace(out.Error.Message) != "" {
-		return nil, fmt.Errorf("api error: %s", strings.TrimSpace(out.Error.Message))
+	if out.Response.Error != nil && strings.TrimSpace(out.Response.Error.Message) != "" {
+		return out, fmt.Errorf("api error: %s", strings.TrimSpace(out.Response.Error.Message))
 	}
-	if len(out.Choices) == 0 {
-		return nil, errors.New("empty choices")
+	if len(out.Response.Choices) == 0 {
+		return out, errors.New("empty choices")
 	}
-	return &out, nil
+	return out, nil
 }

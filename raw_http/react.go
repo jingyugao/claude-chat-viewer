@@ -9,18 +9,31 @@ import (
 
 type ToolHandler func(ctx context.Context, args json.RawMessage) (string, error)
 
-func doReACTWithHistory(ctx context.Context, client *Client, model string, messages []Message, tools []Tool, handlers map[string]ToolHandler, temperature float64, maxSteps int) ([]Message, string, error) {
+type ReACTResult struct {
+	Final           string
+	BaseMessagesLen int
+	Messages        []Message
+	Invokes         []*InvokeResult
+}
+
+func doReACTWithHistory(ctx context.Context, client *Client, model string, messages []Message, tools []Tool, handlers map[string]ToolHandler, temperature float64, maxSteps int) (*ReACTResult, error) {
+	history := cloneMessages(messages)
+	result := &ReACTResult{
+		BaseMessagesLen: len(history),
+		Messages:        history,
+	}
+
 	if maxSteps <= 0 {
-		return nil, "", errors.New("maxSteps must be > 0")
+		return result, errors.New("maxSteps must be > 0")
 	}
 	if len(tools) > 0 && handlers == nil {
-		return nil, "", errors.New("handlers is nil")
+		return result, errors.New("handlers is nil")
 	}
 
 	for step := 0; step < maxSteps; step++ {
 		req := ChatCompletionRequest{
 			Model:       model,
-			Messages:    messages,
+			Messages:    history,
 			Temperature: temperature,
 			Stream:      false,
 			Tools:       tools,
@@ -29,15 +42,20 @@ func doReACTWithHistory(ctx context.Context, client *Client, model string, messa
 			req.ToolChoice = "auto"
 		}
 
-		resp, err := client.Invoke(ctx, req)
+		invoke, err := client.Invoke(ctx, req)
+		result.Invokes = append(result.Invokes, invoke)
 		if err != nil {
-			return nil, "", err
+			result.Messages = history
+			return result, err
 		}
-		msg := resp.Choices[0].Message
-		messages = append(messages, msg)
+
+		msg := invoke.Response.Choices[0].Message
+		history = append(history, msg)
 
 		if len(msg.ToolCalls) == 0 {
-			return messages, msg.Content, nil
+			result.Final = msg.Content
+			result.Messages = history
+			return result, nil
 		}
 
 		for _, tc := range msg.ToolCalls {
@@ -53,21 +71,21 @@ func doReACTWithHistory(ctx context.Context, client *Client, model string, messa
 					out = toolOut
 				}
 			}
-			messages = append(messages, Message{
+			history = append(history, Message{
 				Role:       "tool",
 				ToolCallID: tc.ID,
 				Content:    out,
 			})
 		}
 	}
-	return nil, "", fmt.Errorf("exceeded max steps (%d)", maxSteps)
+
+	result.Messages = history
+	return result, fmt.Errorf("exceeded max steps (%d)", maxSteps)
 }
 
-func doReACT(ctx context.Context, client *Client, model, systemPrompt, userPrompt string, tools []Tool, handlers map[string]ToolHandler, temperature float64, maxSteps int) (string, error) {
-	messages := []Message{
+func doReACT(ctx context.Context, client *Client, model, systemPrompt, userPrompt string, tools []Tool, handlers map[string]ToolHandler, temperature float64, maxSteps int) (*ReACTResult, error) {
+	return doReACTWithHistory(ctx, client, model, []Message{
 		{Role: "system", Content: systemPrompt},
 		{Role: "user", Content: userPrompt},
-	}
-	_, out, err := doReACTWithHistory(ctx, client, model, messages, tools, handlers, temperature, maxSteps)
-	return out, err
+	}, tools, handlers, temperature, maxSteps)
 }

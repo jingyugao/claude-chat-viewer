@@ -86,16 +86,16 @@ func (s *Session) Chat(ctx context.Context, userPrompt string) (string, error) {
 	s.messages = append(s.messages, Message{Role: "user", Content: userPrompt})
 
 	if len(s.tools) > 0 {
-		updated, out, err := doReACTWithHistory(ctx, s.client, s.model, s.messages, s.tools, s.handlers, s.temperature, s.maxSteps)
+		res, err := doReACTWithHistory(ctx, s.client, s.model, s.messages, s.tools, s.handlers, s.temperature, s.maxSteps)
 		if err != nil {
 			s.messages = s.messages[:origLen]
 			return "", err
 		}
-		s.messages = updated
-		return out, nil
+		s.messages = res.Messages
+		return res.Final, nil
 	}
 
-	resp, err := s.client.Invoke(ctx, ChatCompletionRequest{
+	invoke, err := s.client.Invoke(ctx, ChatCompletionRequest{
 		Model:       s.model,
 		Messages:    s.messages,
 		Temperature: s.temperature,
@@ -106,7 +106,7 @@ func (s *Session) Chat(ctx context.Context, userPrompt string) (string, error) {
 		return "", err
 	}
 
-	msg := resp.Choices[0].Message
+	msg := invoke.Response.Choices[0].Message
 	if len(msg.ToolCalls) > 0 {
 		s.messages = s.messages[:origLen]
 		return "", fmt.Errorf("model returned tool_calls; enable tools to execute them")
