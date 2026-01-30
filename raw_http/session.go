@@ -18,7 +18,8 @@ type Session struct {
 	tools    []Tool
 	handlers map[string]ToolHandler
 
-	messages []Message
+	messages  []Message
+	lastReACT *ReACTResult
 }
 
 func NewSession(endpoint, model string, timeout time.Duration) (*Session, error) {
@@ -62,6 +63,7 @@ func (s *Session) Messages() []Message {
 }
 
 func (s *Session) Reset(keepSystem bool) {
+	s.lastReACT = nil
 	if !keepSystem {
 		s.messages = nil
 		return
@@ -77,6 +79,7 @@ func (s *Session) Chat(ctx context.Context, userPrompt string) (string, error) {
 	if s == nil || s.client == nil {
 		return "", errors.New("nil session")
 	}
+	s.lastReACT = nil
 	userPrompt = strings.TrimSpace(userPrompt)
 	if userPrompt == "" {
 		return "", errors.New("empty user prompt")
@@ -92,6 +95,7 @@ func (s *Session) Chat(ctx context.Context, userPrompt string) (string, error) {
 			return "", err
 		}
 		s.messages = res.Messages
+		s.lastReACT = res
 		return res.Final, nil
 	}
 
@@ -114,4 +118,11 @@ func (s *Session) Chat(ctx context.Context, userPrompt string) (string, error) {
 
 	s.messages = append(s.messages, msg)
 	return msg.Content, nil
+}
+
+func (s *Session) LastReACT() *ReACTResult {
+	if s == nil {
+		return nil
+	}
+	return s.lastReACT
 }

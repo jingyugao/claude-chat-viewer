@@ -91,6 +91,9 @@ func TestSession_MultiTurn_WithTools_Integration(t *testing.T) {
 		if _, err := sess.Chat(ctx, prompt); err != nil {
 			t.Fatalf("turn%d error: %v", i+1, err)
 		}
+		if res := sess.LastReACT(); res != nil {
+			t.Log("\n" + RenderReACTResult(res))
+		}
 	}
 
 	if got := len(sess.Messages()); got < 2*len(turns)+1 {
