@@ -80,9 +80,27 @@ func RenderReACTResult(res *ReACTResult) string {
 		}
 
 		content := strings.TrimSpace(m.Content)
+		thinking := strings.TrimSpace(m.ReasoningContent)
+		if thinking == "" && m.Role == "assistant" {
+			thinkFromTags, rest := extractThinkTags(content)
+			if thinkFromTags != "" {
+				thinking = thinkFromTags
+				content = rest
+			}
+		}
+
+		if thinking != "" {
+			b.WriteString("  think:\n")
+			b.WriteString(indentBlock(thinking, "    "))
+			b.WriteByte('\n')
+		}
+
 		if content != "" {
 			if m.Role == "tool" {
 				content = prettyMaybeJSON(content)
+			}
+			if m.Role == "assistant" {
+				content = extractFinalTags(content)
 			}
 			b.WriteString(indentBlock(content, "  "))
 			b.WriteByte('\n')
@@ -120,4 +138,35 @@ func prettyMaybeJSON(s string) string {
 	var out bytes.Buffer
 	out.Write(b)
 	return out.String()
+}
+
+func extractThinkTags(content string) (think string, rest string) {
+	const (
+		open  = "<think>"
+		close = "</think>"
+	)
+	start := strings.Index(content, open)
+	end := strings.Index(content, close)
+	if start < 0 || end < 0 || end < start {
+		return "", content
+	}
+	think = strings.TrimSpace(content[start+len(open) : end])
+	rest = strings.TrimSpace(content[end+len(close):])
+	return think, rest
+}
+
+func extractFinalTags(content string) string {
+	const (
+		open  = "<final>"
+		close = "</final>"
+	)
+	start := strings.Index(content, open)
+	if start < 0 {
+		return content
+	}
+	end := strings.Index(content, close)
+	if end < 0 || end < start {
+		return strings.TrimSpace(content[start+len(open):])
+	}
+	return strings.TrimSpace(content[start+len(open) : end])
 }

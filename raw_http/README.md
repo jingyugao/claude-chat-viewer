@@ -43,3 +43,4 @@ go run . -react -prompt "请调用 now 工具给出 Asia/Shanghai 当前时间�
 
 - `Client.Invoke(...)` 返回 `*InvokeResult`，可用 `RenderInvokeResult(invoke)` 生成一段可读的对话输出。
 - `doReACT(...)` 返回 `*ReACTResult`（包含 `Messages` / `Invokes`），可用 `RenderReACTResult(res)` 渲染完整的调用历史（含 tool_calls 与 tool 输出）。
+- 如果模型返回 `reasoning_content`（或输出了 `<think>...</think>` / `<final>...</final>`），渲染器会把 think 与最终答案分开展示；可用 `WithThink(systemPrompt)` 给 system prompt 追加一段约束格式的指令。

@@ -132,5 +132,5 @@ Do not answer until step 3 is completed. Then answer in Chinese in 1 sentence.`
 	if len(res.Messages) <= res.BaseMessagesLen {
 		t.Fatalf("expected messages to grow (base=%d, got=%d)", res.BaseMessagesLen, len(res.Messages))
 	}
-	t.Log(res.Final)
+	t.Log("\n" + RenderReACTResult(res))
 }
