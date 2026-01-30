@@ -7,13 +7,7 @@
 1) 设置 API Key（DashScope 控制台创建）
 
 ```bash
-export DASHSCOPE_API_KEY="YOUR_KEY"
-```
-
-也支持：
-
-```bash
-export ALIYUN_DASHSCOPE_API_KEY="YOUR_KEY"
+export QWEN_API_KEY="YOUR_KEY"
 ```
 
 2) 运行

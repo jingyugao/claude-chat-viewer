@@ -115,4 +115,3 @@ func (s *Session) Chat(ctx context.Context, userPrompt string) (string, error) {
 	s.messages = append(s.messages, msg)
 	return msg.Content, nil
 }
-

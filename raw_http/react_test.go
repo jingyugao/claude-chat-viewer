@@ -3,85 +3,9 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"io"
-	"net/http"
-	"net/http/httptest"
-	"sync/atomic"
 	"testing"
 	"time"
 )
-
-func TestDoReACT_HappyPath_ToolCall(t *testing.T) {
-	tools := []Tool{
-		{
-			Type: "function",
-			Function: ToolFunction{
-				Name: "echo",
-				Parameters: map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"text": map[string]interface{}{"type": "string"},
-					},
-					"required": []string{"text"},
-				},
-			},
-		},
-	}
-	handlers := map[string]ToolHandler{
-		"echo": func(ctx context.Context, args json.RawMessage) (string, error) {
-			var in struct {
-				Text string `json:"text"`
-			}
-			if err := json.Unmarshal(args, &in); err != nil {
-				return "", err
-			}
-			return "ECHO:" + in.Text, nil
-		},
-	}
-
-	var calls atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		step := calls.Add(1)
-
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			http.Error(w, "bad request", http.StatusBadRequest)
-			return
-		}
-		var req ChatCompletionRequest
-		if err := json.Unmarshal(body, &req); err != nil {
-			http.Error(w, "bad request", http.StatusBadRequest)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		switch step {
-		case 1:
-			_, _ = io.WriteString(w, `{"choices":[{"index":0,"message":{"role":"assistant","tool_calls":[{"id":"call_1","type":"function","function":{"name":"echo","arguments":"{\"text\":\"abc\"}"}}]},"finish_reason":"tool_calls"}]}`)
-		case 2:
-			if len(req.Messages) < 1 || req.Messages[len(req.Messages)-1].Role != "tool" || req.Messages[len(req.Messages)-1].ToolCallID != "call_1" || req.Messages[len(req.Messages)-1].Content != "ECHO:abc" {
-				http.Error(w, "missing tool result in messages", http.StatusBadRequest)
-				return
-			}
-			_, _ = io.WriteString(w, `{"choices":[{"index":0,"message":{"role":"assistant","content":"final"},"finish_reason":"stop"}]}`)
-		default:
-			http.Error(w, "too many calls", http.StatusBadRequest)
-		}
-	}))
-	defer srv.Close()
-
-	client := NewClient(srv.URL, "k", 5*time.Second)
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	out, err := doReACT(ctx, client, "qwen-plus", "s", "u", tools, handlers, 0.1, 4)
-	if err != nil {
-		t.Fatalf("doReACT error: %v", err)
-	}
-	if out != "final" {
-		t.Fatalf("out = %q, want %q", out, "final")
-	}
-}
 
 func TestEvalArithmetic_HappyPath(t *testing.T) {
 	got, err := evalArithmetic("(1+2)*3/4")

@@ -27,46 +27,27 @@ func main() {
 		os.Exit(2)
 	}
 
-	apiKey := strings.TrimSpace(os.Getenv("DASHSCOPE_API_KEY"))
-	if apiKey == "" {
-		apiKey = strings.TrimSpace(os.Getenv("ALIYUN_DASHSCOPE_API_KEY"))
-	}
-	if apiKey == "" {
-		fmt.Fprintln(os.Stderr, "missing API key: set DASHSCOPE_API_KEY (or ALIYUN_DASHSCOPE_API_KEY)")
-		os.Exit(2)
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
 
-	client := NewClient(*endpoint, apiKey, *timeout)
+	sess, err := NewSession(*endpoint, *model, *timeout)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	sess.SetSystemPrompt(*system)
+	sess.SetTemperature(*temp)
+	sess.SetMaxSteps(*maxSteps)
 
 	if *react {
 		tools, handlers := DefaultTools()
-		out, err := doReACT(ctx, client, *model, *system, *prompt, tools, handlers, *temp, *maxSteps)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		fmt.Print(out)
-		return
+		sess.EnableTools(tools, handlers)
 	}
 
-	resp, err := client.Invoke(ctx, ChatCompletionRequest{
-		Model:       *model,
-		Messages:    []Message{{Role: "system", Content: *system}, {Role: "user", Content: *prompt}},
-		Temperature: *temp,
-		Stream:      false,
-	})
+	out, err := sess.Chat(ctx, *prompt)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-
-	msg := resp.Choices[0].Message
-	if len(msg.ToolCalls) > 0 {
-		fmt.Fprintln(os.Stderr, "model returned tool_calls; rerun with -react to execute tools")
-		os.Exit(1)
-	}
-	fmt.Print(msg.Content)
+	fmt.Print(out)
 }
