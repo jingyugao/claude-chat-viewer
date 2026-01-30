@@ -32,257 +32,46 @@
             return candidate;
         };
 
-        const App = () => {
-            const [data, setData] = useState(null);
-            const [loading, setLoading] = useState(true);
-            const [error, setError] = useState(null);
-            const [showSystem, setShowSystem] = useState(false);
-            const [showTools, setShowTools] = useState(false);
-            const [dataFile, setDataFile] = useState(getDataFile());
-            const [files, setFiles] = useState([]);
-            const availableFiles = React.useMemo(() => {
-                const filesWithSelected = [...files];
-                if (dataFile && !filesWithSelected.includes(dataFile)) filesWithSelected.unshift(dataFile);
-                return filesWithSelected;
-            }, [files, dataFile]);
-
-            useEffect(() => {
-                fetch("/api/sessions")
-                    .then(r => r.json())
-                    .then(fileList => {
-                        setFiles(fileList);
-                        if (!dataFile && fileList.length > 0) setDataFile(fileList[0]);
-                    })
-                    .catch(() => {
-                        setFiles([]);
-                    });
-            }, [dataFile]);
-
-            useEffect(() => {
-                if (!dataFile) return;
-                setLoading(true);
-                setError(null);
-                setData(null);
-                fetch(`/api/sessions/${dataFile}`)
-                    .then(r => r.json())
-                    .then(j => { 
-                        // ADAPTER: Convert raw API call list to viewer format
-                        if (Array.isArray(j)) {
-                            // Find the last successful /v1/messages call
-                            const chatCalls = j.filter(call => 
-                                call.url.includes("/v1/messages") && 
-                                call.request_body && 
-                                call.request_body.messages
-                            );
-                            
-                            if (chatCalls.length > 0) {
-                                const lastCall = chatCalls[chatCalls.length - 1];
-                                const systemPrompt = lastCall.request_body.system;
-                                const messages = [...lastCall.request_body.messages];
-                                
-                                // Append the assistant's response if available
-                                if (lastCall.response_body) {
-                                    let assistantContent = null;
-                                    
-                                    // Handle standard JSON response
-                                    if (lastCall.response_body.content) {
-                                        assistantContent = lastCall.response_body.content;
-                                    } 
-                                    // Handle reconstructed SSE text
-                                    else if (lastCall.response_body.reconstructed_text) {
-                                        assistantContent = [{ type: "text", text: lastCall.response_body.reconstructed_text }];
-                                    }
-
-                                    if (assistantContent) {
-                                        messages.push({
-                                            role: "assistant",
-                                            content: assistantContent
-                                        });
-                                    }
-                                }
-
-                                setData({
-                                    systemPrompt: Array.isArray(systemPrompt) ? systemPrompt.map(s => s.text).join("\n") : systemPrompt,
-                                    messages: messages,
-                                    tools: lastCall.request_body.tools || []
-                                });
-                            } else {
-                                setError("No chat messages found in trace.");
-                            }
-                        } else {
-                            // Fallback for legacy format
-                            setData(j); 
-                        }
-                        setLoading(false); 
-                    })
-                    .catch(e => { setError(e.message); setLoading(false); });
-            }, [dataFile]);
-
-            const handleFileChange = (event) => {
-                const next = event.target.value;
-                setDataFile(next);
-                const params = new URLSearchParams(window.location.search);
-                params.set("file", next);
-                window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
-            };
-
-            if (loading) return <div className="p-10 text-blue-400 animate-pulse text-center tracking-widest text-xs font-bold">INITIALIZING TRACE...</div>;
-            if (error) return <div className="p-10 text-red-500 text-center font-bold">ERROR: {error}</div>;
-            if (!data) return <div className="p-10 text-gray-400 text-center font-bold">NO DATA FILES FOUND</div>;
-
-            const getToolDefinitions = () => {
-                if (data.toolDefinitions) return data.toolDefinitions;
-                if (data.tools) return data.tools;
-                if (data.systemPrompt) {
-                    const start = data.systemPrompt.indexOf("<tools>");
-                    const end = data.systemPrompt.indexOf("</tools>");
-                    if (start !== -1 && end !== -1 && end > start) {
-                        return data.systemPrompt.slice(start + 7, end).trim();
-                    }
-                }
-                return null;
-            };
-
-            const ToolItem = ({ tool }) => {
-                const [expanded, setExpanded] = useState(false);
-                return (
-                    <div className="border border-gray-700 bg-[#252526] rounded-md overflow-hidden">
-                        <div 
-                            className="px-4 py-2 border-b border-gray-700 bg-[#2d2d2d] flex justify-between items-center cursor-pointer hover:bg-[#363636] transition-colors"
-                            onClick={() => setExpanded(!expanded)}
-                        >
-                            <div className="flex items-center gap-2 overflow-hidden">
-                                <span className="opacity-50 text-[10px] w-4">{expanded ? "▼" : "▶"}</span>
-                                <div className="font-bold text-teal-400 font-mono text-xs truncate">{tool.name}</div>
-                                {!expanded && (
-                                    <div className="text-gray-500 text-[10px] truncate ml-2 max-w-[300px]">
-                                        {tool.description ? tool.description.split('\n')[0] : ''}
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                        {expanded && (
-                            <div className="p-4 space-y-3 bg-[#202020]">
-                                <div className="text-gray-300 text-[11px] leading-relaxed whitespace-pre-wrap">{tool.description}</div>
-                                <div className="mt-2">
-                                    <div className="text-[9px] uppercase tracking-wider text-gray-500 font-bold mb-1">Input Schema</div>
-                                    <pre className="bg-[#151515] p-2 rounded border border-gray-800 text-[10px] text-teal-200/70 font-mono overflow-x-auto">
-                                        {JSON.stringify(tool.input_schema, null, 2)}
-                                    </pre>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                );
-            };
-
-            const ToolList = ({ tools }) => {
-                if (!tools || tools.length === 0) return <div className="p-5 text-gray-500 italic">No tools defined.</div>;
-                
-                return (
-                    <div className="grid grid-cols-1 gap-2 p-4 bg-[#1a1a1a]">
-                        {tools.map((tool, idx) => (
-                            <ToolItem key={idx} tool={tool} />
-                        ))}
-                    </div>
-                );
-            };
-
-            const toolDefs = getToolDefinitions();
-            // Try to parse if it's a JSON string, otherwise assume it's an object or list
-            let parsedTools = [];
-            try {
-                if (typeof toolDefs === 'string') {
-                    // Try to extract JSON array if embedded in text
-                    if (toolDefs.trim().startsWith('[')) {
-                         parsedTools = JSON.parse(toolDefs);
-                    }
-                } else if (Array.isArray(toolDefs)) {
-                    parsedTools = toolDefs;
-                }
-            } catch (e) {
-                console.error("Failed to parse tools", e);
-            }
-
+        const ToolItem = ({ tool }) => {
+            const [expanded, setExpanded] = useState(false);
             return (
-                <div className="flex flex-col h-full max-w-6xl mx-auto border-x border-gray-800 bg-[#1e1e1e] shadow-2xl">
-                    <div className="p-4 border-b border-gray-800 bg-[#252526] flex justify-between items-center sticky top-0 z-50">
-                        <div className="flex items-center gap-3">
-                            <div className="w-3 h-3 rounded-full bg-[#ff5f56] shadow-sm"></div>
-                            <div className="w-3 h-3 rounded-full bg-[#ffbd2e] shadow-sm"></div>
-                            <div className="w-3 h-3 rounded-full bg-[#27c93f] shadow-sm"></div>
-                            <h1 className="ml-2 text-[10px] font-bold text-gray-500 tracking-[0.2em] uppercase">Claude Trace Inspector</h1>
-                        </div>
-                        <div className="flex items-center gap-3">
-                            <div className="text-[10px] font-mono text-gray-600 bg-black/20 px-2 py-1 rounded">
-                                {data.messages.length} EVENTS
-                            </div>
-                            <div className="flex items-center gap-2 text-[10px] font-mono text-gray-600">
-                                <span className="hidden sm:inline">FILE</span>
-                                <select
-                                    value={dataFile}
-                                    onChange={handleFileChange}
-                                    className="bg-[#1b1b1b] border border-gray-700/70 rounded px-2 py-1 text-gray-300 focus:outline-none focus:border-blue-600/60"
-                                >
-                                    {availableFiles.map(file => (
-                                        <option key={file} value={file}>{file}</option>
-                                    ))}
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="flex-1 overflow-y-auto p-6 space-y-10">
-                        {data.systemPrompt && (
-                            <div className="border border-gray-700 rounded-md bg-[#2d2d2d] overflow-hidden shadow-lg">
-                                <button onClick={() => setShowSystem(!showSystem)} className="w-full p-3 text-left bg-[#333] hover:bg-[#3c3c3c] font-bold text-[10px] uppercase text-blue-400 flex justify-between items-center transition-colors">
-                                    <span className="flex items-center gap-2">
-                                        <span className="opacity-50">{showSystem ? "▼" : "▶"}</span>
-                                        SYSTEM PROMPT
-                                    </span>
-                                    <span className="text-[9px] bg-blue-900/30 text-blue-300 px-1.5 py-0.5 rounded border border-blue-800/30">READ ONLY</span>
-                                </button>
-                                {showSystem && <div className="p-5 text-[11px] leading-relaxed text-gray-400 border-t border-gray-700 bg-[#1a1a1a] whitespace-pre-wrap font-mono">{data.systemPrompt}</div>}
-                            </div>
-                        )}
-                        <div className="border border-gray-700 rounded-md bg-[#2b2b2b] overflow-hidden shadow-lg">
-                            <button onClick={() => setShowTools(!showTools)} className="w-full p-3 text-left bg-[#2f2f2f] hover:bg-[#383838] font-bold text-[10px] uppercase text-teal-400 flex justify-between items-center transition-colors">
-                                <span className="flex items-center gap-2">
-                                    <span className="opacity-50">{showTools ? "▼" : "▶"}</span>
-                                    TOOL DEFINITIONS
-                                    <span className="ml-2 text-gray-500 text-[9px] normal-case font-normal">({parsedTools.length} tools)</span>
-                                </span>
-                                <span className="text-[9px] bg-teal-900/30 text-teal-300 px-1.5 py-0.5 rounded border border-teal-800/30">READ ONLY</span>
-                            </button>
-                            {showTools && (
-                                <div className="border-t border-gray-700 max-h-[500px] overflow-y-auto">
-                                    <ToolList tools={parsedTools} />
+                <div className="border border-gray-700 bg-[#252526] rounded-md overflow-hidden mb-2">
+                    <div 
+                        className="px-4 py-2 border-b border-gray-700 bg-[#2d2d2d] flex justify-between items-center cursor-pointer hover:bg-[#363636] transition-colors"
+                        onClick={() => setExpanded(!expanded)}
+                    >
+                        <div className="flex items-center gap-2 overflow-hidden">
+                            <span className="opacity-50 text-[10px] w-4 text-center">{expanded ? "▼" : "▶"}</span>
+                            <div className="font-bold text-teal-400 font-mono text-xs truncate">{tool.name}</div>
+                            {!expanded && (
+                                <div className="text-gray-500 text-[10px] truncate ml-2 max-w-[300px]">
+                                    {tool.description ? tool.description.split('\n')[0] : ''}
                                 </div>
                             )}
                         </div>
-
-                        <div className="space-y-12 pb-10">
-                            {data.messages.map((msg, idx) => (
-                                <div key={idx} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                                    <div className={`bubble rounded-xl overflow-hidden ${msg.role === "user" ? "bg-[#2b3a42]/30 border border-blue-900/40" : "bg-[#252526] border border-gray-800 shadow-xl"}`}>
-                                        <div className={`px-4 py-1.5 text-[9px] font-black uppercase tracking-widest border-b flex justify-between items-center ${msg.role === "user" ? "border-blue-900/20 text-blue-500" : "border-gray-800 text-gray-600"}`}>
-                                            <span>{msg.role}</span>
-                                            {msg.role === "assistant" && <span className="opacity-30">AI</span>}
-                                        </div>
-                                        <div className="p-5">
-                                            {Array.isArray(msg.content) ? (
-                                                <div className="space-y-4">
-                                                    {msg.content.map((b, i) => <ContentBlock key={i} block={b} />)}
-                                                </div>
-                                            ) : (
-                                                <div className="text-[13px] leading-relaxed text-gray-300 whitespace-pre-wrap">{msg.content}</div>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
                     </div>
+                    {expanded && (
+                        <div className="p-4 space-y-3 bg-[#202020]">
+                            <div className="text-gray-300 text-[11px] leading-relaxed whitespace-pre-wrap">{tool.description}</div>
+                            <div className="mt-2">
+                                <div className="text-[9px] uppercase tracking-wider text-gray-500 font-bold mb-1">Input Schema</div>
+                                <pre className="bg-[#151515] p-2 rounded border border-gray-800 text-[10px] text-teal-200/70 font-mono overflow-x-auto">
+                                    {JSON.stringify(tool.input_schema, null, 2)}
+                                </pre>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const ToolList = ({ tools }) => {
+            if (!tools || tools.length === 0) return <div className="p-5 text-gray-500 italic">No tools defined.</div>;
+            return (
+                <div className="p-4 bg-[#1a1a1a]">
+                    {tools.map((tool, idx) => (
+                        <ToolItem key={idx} tool={tool} />
+                    ))}
                 </div>
             );
         };
@@ -291,7 +80,7 @@
             if (block.type === "text") {
                 if (block.text.includes("<system-reminder>")) {
                      return (
-                        <div className="text-[11px] text-amber-500/90 bg-amber-900/10 p-4 rounded-lg border border-amber-900/30 whitespace-pre-wrap font-mono leading-relaxed relative overflow-hidden">
+                        <div className="text-[11px] text-amber-500/90 bg-amber-900/10 p-4 rounded-lg border border-amber-900/30 whitespace-pre-wrap font-mono leading-relaxed relative overflow-hidden my-2">
                             <div className="absolute top-0 left-0 w-1 h-full bg-amber-600/50"></div>
                             <div className="mb-2 font-bold opacity-70 flex items-center gap-2">
                                 <span className="text-amber-500">⚠</span> SYSTEM REMINDER
@@ -325,7 +114,6 @@
                     );
                 }
                 
-                // Generic tool use
                 return (
                     <div className="mt-4 border border-purple-900/40 bg-[#1a1a1a] rounded-lg overflow-hidden">
                         <div className="bg-purple-900/10 px-4 py-2 text-[10px] font-mono font-bold flex items-center gap-2 border-b border-purple-900/20">
@@ -340,28 +128,352 @@
             }
             
             if (block.type === "tool_result") {
-                // FIX: Handle structured content in tool results (e.g. array of text blocks)
                 let contentDisplay = block.content;
-                
                 if (Array.isArray(block.content)) {
-                    contentDisplay = block.content.map(c => {
-                        if (typeof c === "string") return c;
-                        if (c.type === "text") return c.text;
-                        return JSON.stringify(c);
-                    }).join("\\n");
+                    contentDisplay = block.content.map(c => (typeof c === "string" ? c : (c.text || JSON.stringify(c)))).join("\n");
                 } else if (typeof block.content === "object" && block.content !== null) {
                     contentDisplay = JSON.stringify(block.content, null, 2);
                 }
 
                 return (
                     <div className="mt-4 p-3 bg-green-900/5 border border-green-900/20 rounded-lg text-[11px] text-green-400/80 font-mono flex items-start gap-2">
-                        <span className="mt-0.5">✔</span> 
+                        <span className="mt-0.5 text-green-500">✔</span> 
                         <span className="whitespace-pre-wrap">{contentDisplay || "Success"}</span>
+                    </div>
+                );
+            }
+
+            if (block.type === "thinking") {
+                return (
+                    <div className="mt-2 mb-4 border-l-2 border-gray-600 pl-4 py-1">
+                        <div className="text-[10px] uppercase font-bold text-gray-500 mb-1 flex items-center gap-2">
+                            <span>💭</span> THINKING PROCESS
+                        </div>
+                        <div className="text-[12px] text-gray-400 italic leading-relaxed whitespace-pre-wrap font-serif opacity-80">
+                            {block.thinking}
+                        </div>
+                    </div>
+                );
+            }
+
+            if (block.type === "redacted_thinking") {
+                 return (
+                    <div className="mt-2 mb-4 border-l-2 border-gray-700 pl-4 py-1">
+                        <div className="text-[10px] uppercase font-bold text-gray-600 mb-1">
+                            💭 THINKING PROCESS (REDACTED)
+                        </div>
                     </div>
                 );
             }
             
             return <div className="text-red-500 text-[10px]">Unknown block type: {block.type}</div>;
+        };
+
+        const App = () => {
+            const [traces, setTraces] = useState([]);
+            const [activeTraceIndex, setActiveTraceIndex] = useState(-1);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(null);
+            const [showSystem, setShowSystem] = useState(false);
+            const [showTools, setShowTools] = useState(false);
+            const [showAllSteps, setShowAllSteps] = useState(false);
+            const [dataFile, setDataFile] = useState(getDataFile());
+            const [files, setFiles] = useState([]);
+
+            useEffect(() => {
+                fetch("/api/sessions")
+                    .then(r => r.json())
+                    .then(fileList => {
+                        setFiles(fileList);
+                        if (!dataFile && fileList.length > 0) setDataFile(fileList[0]);
+                    })
+                    .catch(() => setFiles([]));
+            }, []);
+
+            useEffect(() => {
+                if (!dataFile) return;
+                setLoading(true);
+                setError(null);
+                setTraces([]);
+                setActiveTraceIndex(-1);
+                
+                fetch(`/api/sessions/${dataFile}`)
+                    .then(r => r.json())
+                    .then(j => { 
+                        if (Array.isArray(j)) {
+                            const chatCalls = j.filter(call => 
+                                call.url.includes("/v1/messages") && 
+                                !call.url.includes("/count_tokens") &&
+                                call.request_body && 
+                                call.request_body.messages
+                            );
+                            
+                            if (chatCalls.length > 0) {
+                                // Add original index for stable sorting
+                                chatCalls.forEach((call, i) => call._sortIdx = i);
+
+                                // Sort by timestamp ascending, using original index as tie breaker
+                                chatCalls.sort((a, b) => {
+                                    const timeDiff = (a.timestamp || 0) - (b.timestamp || 0);
+                                    if (timeDiff !== 0) return timeDiff;
+                                    return a._sortIdx - b._sortIdx;
+                                });
+                                
+                                // Group into branches
+                                const branches = [];
+                                chatCalls.forEach((call, callIdx) => {
+                                    let foundBranch = false;
+                                    
+                                    // Extract current session ID
+                                    let currentSid = "";
+                                    try {
+                                        const uid = call.request_body.metadata?.user_id;
+                                        if (uid && uid.includes("_session_")) currentSid = uid.split("_session_")[1];
+                                    } catch(e) {}
+
+                                    for (let i = branches.length - 1; i >= 0; i--) {
+                                        const branch = branches[i];
+                                        const lastCall = branch.calls[branch.calls.length - 1];
+                                        
+                                        // Extract branch session ID
+                                        let branchSid = "";
+                                        try {
+                                            const uid = lastCall.request_body.metadata?.user_id;
+                                            if (uid && uid.includes("_session_")) branchSid = uid.split("_session_")[1];
+                                        } catch(e) {}
+
+                                        // Strategy 1: Strict Prefix Match (Same history line)
+                                        const cleanMsg = (m) => ({
+                                            role: m.role,
+                                            content: Array.isArray(m.content) 
+                                                ? m.content.filter(b => b.type !== 'thinking' && b.type !== 'redacted_thinking').map(({cache_control, ...r}) => r)
+                                                : m.content
+                                        });
+
+                                        const isPrefix = call.request_body.messages.length >= lastCall.request_body.messages.length && 
+                                            lastCall.request_body.messages.every((m, idx) => 
+                                                JSON.stringify(cleanMsg(m)) === JSON.stringify(cleanMsg(call.request_body.messages[idx]))
+                                            );
+
+                                        // Strategy 2: Temporal Proximity (Related sub-tasks)
+                                        const isNearInTime = Math.abs((call.timestamp || 0) - (lastCall.timestamp || 0)) < 10; // 10 second window
+                                        const sameSession = currentSid && branchSid && currentSid === branchSid;
+
+                                        if (isPrefix || (isNearInTime && sameSession)) {
+                                            branch.calls.push({ ...call, originalIdx: callIdx });
+                                            foundBranch = true;
+                                            break;
+                                        }
+                                    }
+                                    
+                                    if (!foundBranch) {
+                                        branches.push({
+                                            id: branches.length + 1,
+                                            calls: [{ ...call, originalIdx: callIdx }]
+                                        });
+                                    }
+                                });
+
+                                // Process traces to mark them as 'superseded' if they are not the last in branch
+                                const processedTraces = [];
+                                branches.forEach(branch => {
+                                    branch.calls.forEach((call, subIdx) => {
+                                        const isLastInBranch = subIdx === branch.calls.length - 1;
+                                        processedTraces.push({
+                                            ...call,
+                                            branchId: branch.id,
+                                            isTip: isLastInBranch, // Tip of the branch
+                                            isNewBranch: subIdx === 0
+                                        });
+                                    });
+                                });
+
+                                setTraces(processedTraces);
+                                
+                                // Auto-select the longest tip
+                                let bestIdx = -1;
+                                let maxLen = -1;
+                                processedTraces.forEach((t, i) => {
+                                    if (t.isTip && t.request_body.messages.length > maxLen) {
+                                        maxLen = t.request_body.messages.length;
+                                        bestIdx = i;
+                                    }
+                                });
+                                if (bestIdx === -1) bestIdx = 0;
+                                setActiveTraceIndex(bestIdx);
+                            } else {
+                                setError("No chat messages found in trace.");
+                            }
+                        } else {
+                            setError("Invalid data format (expected array)");
+                        }
+                        setLoading(false); 
+                    })
+                    .catch(e => { setError(e.message); setLoading(false); });
+            }, [dataFile]);
+
+            const handleFileChange = (event) => {
+                const next = event.target.value;
+                setDataFile(next);
+                const params = new URLSearchParams(window.location.search);
+                params.set("file", next);
+                window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
+            };
+
+            const activeData = React.useMemo(() => {
+                if (activeTraceIndex === -1 || !traces[activeTraceIndex]) return null;
+                const call = traces[activeTraceIndex];
+                const systemPrompt = call.request_body.system;
+                const messages = [...call.request_body.messages];
+                
+                if (call.response_body) {
+                    let assistantContent = null;
+                    if (call.response_body.content) assistantContent = call.response_body.content;
+                    else if (call.response_body.reconstructed_text) assistantContent = [{ type: "text", text: call.response_body.reconstructed_text }];
+
+                    if (assistantContent) {
+                        messages.push({ role: "assistant", content: assistantContent });
+                    }
+                }
+
+                return {
+                    systemPrompt: Array.isArray(systemPrompt) ? systemPrompt.map(s => s.text).join("\n") : (typeof systemPrompt === 'string' ? systemPrompt : JSON.stringify(systemPrompt)),
+                    messages: messages,
+                    tools: call.request_body.tools || [],
+                    timestamp: call.timestamp,
+                    model: call.request_body.model || "unknown"
+                };
+            }, [traces, activeTraceIndex]);
+
+            if (loading) return <div className="p-10 text-blue-400 animate-pulse text-center tracking-widest text-xs font-bold font-mono">INITIALIZING TRACE...</div>;
+            if (error) return <div className="p-10 text-red-500 text-center font-bold font-mono">ERROR: {error}</div>;
+            if (!activeData) return <div className="p-10 text-gray-400 text-center font-bold font-mono">NO DATA</div>;
+
+            const formatFullTime = (ts) => {
+                return new Date(ts * 1000).toLocaleString();
+            };
+
+            return (
+                <div className="flex flex-col h-full max-w-6xl mx-auto border-x border-gray-800 bg-[#1e1e1e] shadow-2xl overflow-hidden">
+                    <div className="p-4 border-b border-gray-800 bg-[#252526] flex justify-between items-center sticky top-0 z-50">
+                        <div className="flex items-center gap-3">
+                            <div className="w-3 h-3 rounded-full bg-[#ff5f56]"></div>
+                            <div className="w-3 h-3 rounded-full bg-[#ffbd2e]"></div>
+                            <div className="w-3 h-3 rounded-full bg-[#27c93f]"></div>
+                            <h1 className="ml-2 text-[10px] font-bold text-gray-500 tracking-[0.2em] uppercase hidden md:block">Claude Trace Inspector</h1>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <div className="hidden lg:flex items-center bg-blue-900/20 border border-blue-800/30 rounded px-2 py-1">
+                                <span className="text-[9px] font-bold text-blue-400 mr-2 uppercase">Model</span>
+                                <span className="text-[10px] font-mono text-blue-200">{activeData.model}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-[10px] font-mono text-gray-600 border-r border-gray-700 pr-3">
+                                <span className="hidden sm:inline">TRACE</span>
+                                <select
+                                    value={activeTraceIndex}
+                                    onChange={(e) => setActiveTraceIndex(Number(e.target.value))}
+                                    className="bg-[#1b1b1b] border border-gray-700/70 rounded px-2 py-1 text-purple-400 focus:outline-none focus:border-purple-600/60 max-w-[150px] md:max-w-[200px]"
+                                >
+                                    {traces.map((trace, idx) => {
+                                        if (!showAllSteps && !trace.isTip && idx !== activeTraceIndex) return null;
+                                        const msgCount = trace.request_body.messages.length;
+                                        const lastMsg = trace.request_body.messages[msgCount - 1];
+                                        let preview = "System Call";
+                                        if (lastMsg && lastMsg.content) {
+                                            if (typeof lastMsg.content === 'string') preview = lastMsg.content;
+                                            else if (Array.isArray(lastMsg.content)) {
+                                                const txt = lastMsg.content.find(b => b.type === 'text');
+                                                preview = txt ? txt.text : '[Tool Result]';
+                                            }
+                                        }
+                                        const time = trace.timestamp ? new Date(trace.timestamp * 1000).toLocaleTimeString() : "";
+                                        return (
+                                            <option key={idx} value={idx}>
+                                                B{trace.branchId} • {time} • {msgCount} ms {preview.substring(0, 20)}...
+                                            </option>
+                                        );
+                                    })}
+                                </select>
+                                <label className="flex items-center gap-1 cursor-pointer ml-1 hover:text-gray-400 transition-colors" title="Show intermediate steps">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={showAllSteps} 
+                                        onChange={e => setShowAllSteps(e.target.checked)}
+                                        className="w-3 h-3 accent-purple-600 bg-[#1b1b1b] border-gray-700 rounded"
+                                    />
+                                    <span className="text-[9px]">ALL</span>
+                                </label>
+                            </div>
+                            <div className="flex items-center gap-2 text-[10px] font-mono text-gray-600">
+                                <span className="hidden sm:inline">FILE</span>
+                                <select
+                                    value={dataFile}
+                                    onChange={handleFileChange}
+                                    className="bg-[#1b1b1b] border border-gray-700/70 rounded px-2 py-1 text-gray-300 focus:outline-none focus:border-blue-600/60"
+                                >
+                                    {files.map(file => (
+                                        <option key={file} value={file}>{file}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto p-6 space-y-8">
+                        {/* ... System Prompt and Tool Definitions ... */}
+                        {activeData.systemPrompt && (
+                            <div className="border border-gray-700 rounded-md bg-[#2d2d2d] overflow-hidden shadow-lg">
+                                <button onClick={() => setShowSystem(!showSystem)} className="w-full p-3 text-left bg-[#333] hover:bg-[#3c3c3c] font-bold text-[10px] uppercase text-blue-400 flex justify-between items-center transition-colors">
+                                    <span className="flex items-center gap-2">
+                                        <span className="opacity-50 text-[8px]">{showSystem ? "▼" : "▶"}</span>
+                                        SYSTEM PROMPT
+                                    </span>
+                                </button>
+                                {showSystem && <div className="p-5 text-[11px] leading-relaxed text-gray-400 border-t border-gray-700 bg-[#1a1a1a] whitespace-pre-wrap font-mono">{activeData.systemPrompt}</div>}
+                            </div>
+                        )}
+                        
+                        <div className="border border-gray-700 rounded-md bg-[#2b2b2b] overflow-hidden shadow-lg">
+                            <button onClick={() => setShowTools(!showTools)} className="w-full p-3 text-left bg-[#2f2f2f] hover:bg-[#383838] font-bold text-[10px] uppercase text-teal-400 flex justify-between items-center transition-colors">
+                                <span className="flex items-center gap-2">
+                                    <span className="opacity-50 text-[8px]">{showTools ? "▼" : "▶"}</span>
+                                    TOOL DEFINITIONS
+                                    <span className="ml-2 text-gray-500 text-[9px] normal-case font-normal">({activeData.tools.length} tools)</span>
+                                </span>
+                            </button>
+                            {showTools && (
+                                <div className="border-t border-gray-700 max-h-[400px] overflow-y-auto">
+                                    <ToolList tools={activeData.tools} />
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="space-y-12 pb-10">
+                            {activeData.messages.map((msg, idx) => (
+                                <div key={idx} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                                    <div className={`bubble rounded-xl overflow-hidden ${msg.role === "user" ? "bg-[#2b3a42]/30 border border-blue-900/40" : "bg-[#252526] border border-gray-800 shadow-xl"}`}>
+                                        <div className={`px-4 py-1.5 text-[9px] font-black uppercase tracking-widest border-b flex justify-between items-center ${msg.role === "user" ? "border-blue-900/20 text-blue-500" : "border-gray-800 text-gray-600"}`}>
+                                            <div className="flex items-center gap-2">
+                                                <span>{msg.role}</span>
+                                                <span className="opacity-40 font-normal normal-case tracking-normal ml-2">{new Date(activeData.timestamp * 1000).toLocaleTimeString()}</span>
+                                            </div>
+                                        </div>
+                                        <div className="p-5">
+                                            {Array.isArray(msg.content) ? (
+                                                <div className="space-y-4">
+                                                    {msg.content.map((b, i) => <ContentBlock key={i} block={b} />)}
+                                                </div>
+                                            ) : (
+                                                <div className="text-[13px] leading-relaxed text-gray-300 whitespace-pre-wrap">{msg.content}</div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
         };
 
         const root = ReactDOM.createRoot(document.getElementById("root"));

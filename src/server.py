@@ -4,7 +4,7 @@ import json
 import os
 import mimetypes
 
-PORT = 8008
+PORT = 8088
 WEB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web")
 SESSIONS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "sessions")
 
