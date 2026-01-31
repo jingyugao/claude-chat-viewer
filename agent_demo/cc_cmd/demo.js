@@ -1,7 +1,7 @@
 const pty = require('node-pty');
 const os = require('os');
 
-const shell = 'bash'; 
+const shell = 'bash';
 
 const ptyProcess = pty.spawn(shell, [], {
   name: 'xterm-color',
@@ -13,7 +13,7 @@ const ptyProcess = pty.spawn(shell, [], {
 
 let buffer = '';
 
-ptyProcess.on('data', function(data) {
+ptyProcess.on('data', function (data) {
   process.stdout.write(data);
   buffer += data;
 });
@@ -31,7 +31,7 @@ async function waitForPrompt() {
       if (buffer.includes('$ ')) {
         clearInterval(checkInterval);
         // Clear buffer so we can wait for the next prompt cleanly
-        buffer = ''; 
+        buffer = '';
         resolve();
       }
     }, 100);
@@ -40,24 +40,24 @@ async function waitForPrompt() {
 
 async function runDemo() {
   console.log("--- Starting Bash Pty Session ---");
-  
+
   // Wait for initial prompt
   await waitForPrompt();
 
   // First interaction
   console.log("\n--- Round 1: Sending 'Hello' ---");
-  ptyProcess.write('claude -p "Hello, who are you? (Answer in 1 sentence)"\r');
-  
+  ptyProcess.write('claude -p "1+1=? (Answer in 1 word)"\r');
+
   // Wait for the command to echo and the prompt to return
   // We add a small delay to ensure we don't catch the prompt we just typed if echo is fast,
   // though clearing buffer in waitForPrompt usually handles this.
-  await delay(500); 
+  await delay(500);
   await waitForPrompt();
 
   // Second interaction (using -c to continue context)
   console.log("\n--- Round 2: Asking follow-up ---");
-  ptyProcess.write('claude -c -p "What was the last word of your previous answer?"\r');
-  
+  ptyProcess.write('claude -c -p "What question was asked in your previous answer?"\r');
+
   await delay(500);
   await waitForPrompt();
 
