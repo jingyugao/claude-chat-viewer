@@ -543,14 +543,32 @@
                     }
                 }
 
+                // 找出同一个 agent 的前一个调用，识别历史消息和当前消息
+                let historyEndIndex = -1;
+                const currentAgent = extractAgentName(call);
+                const currentSessionId = extractSessionId(call);
+
+                // 找到前一个同 session 同 agent 的调用
+                const prevCall = traces
+                    .filter(t => t._sortIdx < call._sortIdx)
+                    .filter(t => extractAgentName(t) === currentAgent)
+                    .filter(t => extractSessionId(t) === currentSessionId)
+                    .sort((a, b) => b._sortIdx - a._sortIdx)[0];
+
+                if (prevCall && prevCall.request_body.messages) {
+                    // 前一个调用的消息数量就是历史消息的结束位置
+                    historyEndIndex = prevCall.request_body.messages.length - 1;
+                }
+
                 return {
                     systemPrompt: Array.isArray(systemPrompt) ? systemPrompt.map(s => s.text).join("\n") : (typeof systemPrompt === 'string' ? systemPrompt : JSON.stringify(systemPrompt)),
                     messages: messages,
                     tools: call.request_body.tools || [],
                     timestamp: call.timestamp,
-                    model: call.request_body.model || "unknown"
+                    model: call.request_body.model || "unknown",
+                    historyEndIndex: historyEndIndex
                 };
-            }, [call]);
+            }, [call, traces]);
 
             return (
                 <div className="flex flex-col h-full bg-[#1e1e1e]">
@@ -610,27 +628,35 @@
                         </div>
 
                         <div className="space-y-8 pb-10">
-                            {activeData.messages.map((msg, idx) => (
-                                <div key={idx} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                                    <div className={`bubble rounded-xl overflow-hidden ${msg.role === "user" ? "bg-[#2b3a42]/30 border border-blue-900/40" : "bg-[#252526] border border-gray-800 shadow-xl"}`}>
-                                        <div className={`px-4 py-1.5 text-[9px] font-black uppercase tracking-widest border-b flex justify-between items-center ${msg.role === "user" ? "border-blue-900/20 text-blue-500" : "border-gray-800 text-gray-600"}`}>
-                                            <div className="flex items-center gap-2">
-                                                <span>{msg.role}</span>
-                                                <span className="opacity-40 font-normal normal-case tracking-normal ml-2">{new Date(activeData.timestamp * 1000).toLocaleTimeString()}</span>
+                            {activeData.messages.map((msg, idx) => {
+                                // 判断是否是历史消息
+                                const isHistory = activeData.historyEndIndex >= 0 && idx <= activeData.historyEndIndex;
+                                const isCurrentTurn = !isHistory;
+
+                                return (
+                                    <div key={idx} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                                        <div className={`bubble rounded-xl overflow-hidden ${msg.role === "user" ? "bg-[#2b3a42]/30 border border-blue-900/40" : "bg-[#252526] border border-gray-800 shadow-xl"} ${isHistory ? "opacity-60" : ""}`}>
+                                            <div className={`px-4 py-1.5 text-[9px] font-black uppercase tracking-widest border-b flex justify-between items-center ${msg.role === "user" ? "border-blue-900/20 text-blue-500" : "border-gray-800 text-gray-600"}`}>
+                                                <div className="flex items-center gap-2">
+                                                    <span>{msg.role}</span>
+                                                    {isHistory && <span className="text-[8px] bg-gray-700/50 px-2 py-0.5 rounded text-gray-400">📜 History</span>}
+                                                    {isCurrentTurn && idx > activeData.historyEndIndex && <span className="text-[8px] bg-green-700/50 px-2 py-0.5 rounded text-green-300">✨ Current</span>}
+                                                    <span className="opacity-40 font-normal normal-case tracking-normal ml-2">{new Date(activeData.timestamp * 1000).toLocaleTimeString()}</span>
+                                                </div>
+                                            </div>
+                                            <div className="p-5">
+                                                {Array.isArray(msg.content) ? (
+                                                    <div className="space-y-4">
+                                                        {msg.content.map((b, i) => <ContentBlock key={i} block={b} />)}
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-[13px] leading-relaxed text-gray-300 whitespace-pre-wrap">{msg.content}</div>
+                                                )}
                                             </div>
                                         </div>
-                                        <div className="p-5">
-                                            {Array.isArray(msg.content) ? (
-                                                <div className="space-y-4">
-                                                    {msg.content.map((b, i) => <ContentBlock key={i} block={b} />)}
-                                                </div>
-                                            ) : (
-                                                <div className="text-[13px] leading-relaxed text-gray-300 whitespace-pre-wrap">{msg.content}</div>
-                                            )}
-                                        </div>
                                     </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     </div>
                 </div>
