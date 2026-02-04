@@ -40,8 +40,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return
 
         # Serve static files from web/ directory
-        # Map root / to index.html
-        if self.path == "/" or self.path == "/index.html":
+        # Map root / to index.html (including with query parameters)
+        if self.path == "/" or self.path == "/index.html" or self.path.startswith("/?"):
             filepath = os.path.join(WEB_DIR, "index.html")
             self.serve_file(filepath)
             return
