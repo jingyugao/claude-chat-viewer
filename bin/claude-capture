@@ -6,19 +6,14 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 # 检查参数
 if [ -z "$1" ]; then
-  echo "用法: $0 <对话名称> [claude参数...]"
-  echo "示例: $0 my-test"
-  echo "示例: $0 my-test -p '你好'"
+  echo "用法: $0 <session名称>"
+  echo "示例: $0 my-session"
   exit 1
 fi
 
 SESSION_NAME="$1"
 # 路径更新为 sessions/ 目录
 OUTPUT_MITM="$PROJECT_ROOT/sessions/${SESSION_NAME}.mitm"
-OUTPUT_JSON="$PROJECT_ROOT/sessions/${SESSION_NAME}.json"
-PARSER_SCRIPT="$PROJECT_ROOT/src/parser.py"
-
-shift # 移除第一个参数，剩下的传给 claude
 
 # 动态获取一个随机可用端口
 PROXY_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
@@ -54,7 +49,7 @@ echo "正在启动 Claude..."
 echo "----------------------------------------"
 
 # 运行 Claude
-claude "$@"
+claude
 
 echo ""
 echo "----------------------------------------"
@@ -62,15 +57,4 @@ echo "Claude 已退出。正在停止抓包..."
 kill $MITM_PID 2>/dev/null
 wait $MITM_PID 2>/dev/null
 
-echo "正在解析抓包内容至 JSON..."
-# 运行解析脚本，临时通过环境变量传递输出路径
-# 注意：这里引用了新的 parser.py 路径
-if [ -f "$PARSER_SCRIPT" ]; then
-    OUTPUT_JSON_PATH="$OUTPUT_JSON" mitmdump -n -r "$OUTPUT_MITM" -s "$PARSER_SCRIPT" > /dev/null 2>&1
-    echo "✅ 抓包完成！"
-    echo "原始文件: $OUTPUT_MITM"
-    echo "解析数据: $OUTPUT_JSON"
-else
-    echo "⚠️  错误: 找不到解析脚本 $PARSER_SCRIPT"
-    echo "抓包文件已保存，但未解析 JSON。"
-fi
+echo "✅ 抓包完成！数据已保存到: $OUTPUT_MITM"
