@@ -14,6 +14,7 @@ fi
 SESSION_NAME="$1"
 # 路径更新为 sessions/ 目录
 OUTPUT_MITM="$PROJECT_ROOT/sessions/${SESSION_NAME}.mitm"
+OUTPUT_JSON="$PROJECT_ROOT/sessions/${SESSION_NAME}.json"
 
 # 动态获取一个随机可用端口
 PROXY_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
@@ -30,8 +31,14 @@ fi
 mkdir -p "$PROJECT_ROOT/sessions"
 
 echo "正在启动抓包代理 (端口 $PROXY_PORT)..."
-# 后台启动 mitmdump，静默输出
-mitmdump -p $PROXY_PORT -w "$OUTPUT_MITM" > /dev/null 2>&1 &
+echo "数据将实时保存到: $OUTPUT_JSON"
+echo ""
+
+# 设置环境变量，让 parser.py 知道输出路径
+export OUTPUT_JSON_PATH="$OUTPUT_JSON"
+
+# 后台启动 mitmdump，使用 parser.py 脚本实现实时保存
+mitmdump -p $PROXY_PORT -s "$PROJECT_ROOT/src/parser.py" -w "$OUTPUT_MITM" &
 MITM_PID=$!
 
 # 确保脚本退出时清理代理进程
@@ -40,21 +47,65 @@ trap "kill $MITM_PID 2>/dev/null" EXIT
 # 等待代理完全启动
 sleep 2
 
-# 设置环境变量
+echo "✅ 抓包代理已启动！"
+echo ""
+echo "╔════════════════════════════════════════════════════════════════╗"
+echo "║  🔴 正在录制 API 调用                                          ║"
+echo "║                                                                ║"
+echo "║  📝 Session: ${SESSION_NAME}"
+echo "║  💾 实时保存: ${OUTPUT_JSON}"
+echo "║  📊 查看地址: http://localhost:8088/?file=${SESSION_NAME}.json"
+echo "║                                                                ║"
+echo "║  ▶️  现在可以运行: claude                                      ║"
+echo "║  ⏹️  完成后输入: exit 或按 Ctrl+D                             ║"
+echo "╚════════════════════════════════════════════════════════════════╝"
+echo ""
+
+# 启动一个新的 shell，自动继承环境变量
 export HTTP_PROXY="http://127.0.0.1:$PROXY_PORT"
 export HTTPS_PROXY="http://127.0.0.1:$PROXY_PORT"
 export NODE_EXTRA_CA_CERTS="$CERT_PATH"
 
-echo "正在启动 Claude..."
-echo "----------------------------------------"
+# 检测当前使用的 shell
+CURRENT_SHELL=$(basename "$SHELL")
 
-# 运行 Claude
-claude
+# 创建临时的 shell 初始化文件
+TEMP_RC=$(mktemp)
+trap "rm -f $TEMP_RC" EXIT
+
+if [ "$CURRENT_SHELL" = "zsh" ]; then
+    # 对于 zsh
+    cat > "$TEMP_RC" << 'EOF'
+# 加载用户原有配置
+[[ -f ~/.zshrc ]] && source ~/.zshrc
+
+# 设置录制状态的提示符
+PROMPT='%F{red}🔴 [Recording]%f %F{blue}%~%f %# '
+EOF
+    # 启动 zsh 并使用临时配置
+    zsh --rcs "$TEMP_RC"
+else
+    # 对于 bash
+    cat > "$TEMP_RC" << 'EOF'
+# 加载用户原有配置
+[[ -f ~/.bashrc ]] && source ~/.bashrc
+
+# 设置录制状态的提示符
+PS1="\[\033[1;31m\]🔴 [Recording]\[\033[0m\] \[\033[1;34m\]\w\[\033[0m\] \$ "
+EOF
+    # 启动 bash 并使用临时配置
+    bash --rcfile "$TEMP_RC"
+fi
+
+# 清理临时文件
+rm -f "$TEMP_RC"
 
 echo ""
-echo "----------------------------------------"
-echo "Claude 已退出。正在停止抓包..."
-kill $MITM_PID 2>/dev/null
-wait $MITM_PID 2>/dev/null
+echo "╔════════════════════════════════════════════════════════════════╗"
+echo "║  ⏹️  录制已停止                                                ║"
+echo "╚════════════════════════════════════════════════════════════════╝"
 
-echo "✅ 抓包完成！数据已保存到: $OUTPUT_MITM"
+echo ""
+echo "✅ 抓包已停止！"
+echo "📦 原始数据: $OUTPUT_MITM"
+echo "📄 JSON数据: $OUTPUT_JSON"

@@ -1,9 +1,11 @@
 import json
+import os
 from mitmproxy import http
 
 class Extractor:
     def __init__(self):
         self.calls = []
+        self.output_file = os.environ.get("OUTPUT_JSON_PATH", "parsed_llm_calls.json")
 
     def response(self, flow: http.HTTPFlow):
         # Focus on the messages API endpoint
@@ -31,7 +33,7 @@ class Extractor:
                     # Handle SSE stream
                     full_text = ""
                     raw_content = flow.response.content.decode("utf-8", errors="replace")
-                    
+
                     # Simple SSE parser
                     for line in raw_content.splitlines():
                         if line.startswith("data: ") and line != "data: [DONE]":
@@ -43,7 +45,7 @@ class Extractor:
                                         full_text += delta.get("text", "")
                             except:
                                 pass
-                    
+
                     if full_text:
                         call_data["response_body"] = {"reconstructed_text": full_text}
                     else:
@@ -56,14 +58,21 @@ class Extractor:
 
             self.calls.append(call_data)
 
-    def done(self):
-        import os
-        output_file = os.environ.get("OUTPUT_JSON_PATH", "parsed_llm_calls.json")
+            # 实时保存到文件
+            self._save_to_file()
+
+    def _save_to_file(self):
+        """实时保存数据到文件"""
         try:
-            with open(output_file, "w", encoding="utf-8") as f:
+            with open(self.output_file, "w", encoding="utf-8") as f:
                 json.dump(self.calls, f, indent=2, ensure_ascii=False)
-            print(f"Successfully wrote {len(self.calls)} LLM calls to {output_file}")
+            print(f"✅ Saved {len(self.calls)} calls to {self.output_file}")
         except Exception as e:
-            print(f"Error writing output file: {e}")
+            print(f"❌ Error writing output file: {e}")
+
+    def done(self):
+        """最终保存（确保数据完整）"""
+        self._save_to_file()
+        print(f"🎉 Final save: {len(self.calls)} LLM calls to {self.output_file}")
 
 addons = [Extractor()]
