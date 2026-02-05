@@ -41,8 +41,13 @@ export OUTPUT_JSON_PATH="$OUTPUT_JSON"
 mitmdump -p $PROXY_PORT -s "$PROJECT_ROOT/src/parser.py" -w "$OUTPUT_MITM" &
 MITM_PID=$!
 
-# 确保脚本退出时清理代理进程
-trap "kill $MITM_PID 2>/dev/null" EXIT
+# 确保脚本退出时清理代理进程和临时文件
+cleanup() {
+  kill $MITM_PID 2>/dev/null
+  [ -n "$TEMP_RC" ] && rm -f "$TEMP_RC"
+  [ -n "$TEMP_DIR" ] && rm -rf "$TEMP_DIR"
+}
+trap cleanup EXIT
 
 # 等待代理完全启动
 sleep 2
@@ -69,12 +74,10 @@ export NODE_EXTRA_CA_CERTS="$CERT_PATH"
 # 检测当前使用的 shell
 CURRENT_SHELL=$(basename "$SHELL")
 
-# 创建临时的 shell 初始化文件
-TEMP_RC=$(mktemp)
-trap "rm -f $TEMP_RC" EXIT
-
 if [ "$CURRENT_SHELL" = "zsh" ]; then
-    # 对于 zsh
+    # 对于 zsh: 使用 ZDOTDIR 指向临时目录来加载 .zshrc
+    TEMP_DIR=$(mktemp -d)
+    TEMP_RC="$TEMP_DIR/.zshrc"
     cat > "$TEMP_RC" << 'EOF'
 # 加载用户原有配置
 [[ -f ~/.zshrc ]] && source ~/.zshrc
@@ -83,9 +86,10 @@ if [ "$CURRENT_SHELL" = "zsh" ]; then
 PROMPT='%F{red}🔴 [Recording]%f %F{blue}%~%f %# '
 EOF
     # 启动 zsh 并使用临时配置
-    zsh --rcs "$TEMP_RC"
+    ZDOTDIR="$TEMP_DIR" zsh -i
 else
     # 对于 bash
+    TEMP_RC=$(mktemp)
     cat > "$TEMP_RC" << 'EOF'
 # 加载用户原有配置
 [[ -f ~/.bashrc ]] && source ~/.bashrc
@@ -96,9 +100,6 @@ EOF
     # 启动 bash 并使用临时配置
     bash --rcfile "$TEMP_RC"
 fi
-
-# 清理临时文件
-rm -f "$TEMP_RC"
 
 echo ""
 echo "╔════════════════════════════════════════════════════════════════╗"

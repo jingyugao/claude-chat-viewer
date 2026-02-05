@@ -1,0 +1,346 @@
+app:
+  description: Chat over last week's GitLab commits for omni-data (via MCP).
+  icon: package
+  icon_background: '#FDE68A'
+  mode: advanced-chat
+  name: omni-data weekly commits chat
+  use_icon_as_answer_icon: false
+dependencies: []
+kind: app
+version: 0.3.1
+workflow:
+  conversation_variables: []
+  environment_variables:
+    - description: GitLab project path or numeric ID, e.g. group/omni-data
+      id: env_gitlab_project
+      name: GITLAB_PROJECT
+      selector:
+        - env
+        - GITLAB_PROJECT
+      value: omni-data
+      value_type: string
+    - description: Optional ref name (branch or tag), leave empty for default
+      id: env_gitlab_ref
+      name: GITLAB_REF
+      selector:
+        - env
+        - GITLAB_REF
+      value: ''
+      value_type: string
+  features:
+    file_upload:
+      allowed_file_extensions:
+        - .TXT
+        - .MD
+        - .PDF
+        - .DOCX
+        - .XLSX
+        - .PPTX
+      allowed_file_types:
+        - document
+      allowed_file_upload_methods:
+        - local_file
+        - remote_url
+      enabled: false
+      fileUploadConfig:
+        audio_file_size_limit: 50
+        batch_count_limit: 5
+        file_size_limit: 15
+        image_file_size_limit: 10
+        video_file_size_limit: 100
+        workflow_file_upload_limit: 10
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods:
+          - local_file
+          - remote_url
+    image:
+      enabled: false
+    opening_statement: ''
+    retriever_resource:
+      enabled: false
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+      - data:
+          sourceType: start
+          targetType: agent
+        id: edge-start-to-agent
+        source: start
+        sourceHandle: source
+        target: mcp_agent
+        targetHandle: target
+        type: custom
+        zIndex: 0
+      - data:
+          sourceType: agent
+          targetType: answer
+        id: edge-agent-to-answer
+        source: mcp_agent
+        sourceHandle: source
+        target: answer
+        targetHandle: target
+        type: custom
+        zIndex: 0
+    nodes:
+      - data:
+          desc: ''
+          selected: false
+          title: Start
+          type: start
+          variables: []
+        height: 90
+        id: start
+        position:
+          x: 60
+          y: 120
+        positionAbsolute:
+          x: 60
+          y: 120
+        selected: false
+        type: custom
+        width: 244
+      - data:
+          agent_parameters:
+            config_json:
+              type: constant
+              value: ''
+            instruction:
+              type: constant
+              value: |-
+                你是 GitLab 提交周报助手，必须使用 MCP 工具从 GitLab 查询数据。
+                目标项目：{{#env.GITLAB_PROJECT#}}。如提供了 {{#env.GITLAB_REF#}}，请限制到该分支/标签。
+
+                时间范围：上一个自然周（UTC）。即“本周一 00:00:00 UTC”往前 7 天到其前一微秒。
+
+                工作要求：
+                1. 计算时间范围后，调用 MCP 中的 GitLab 工具获取该时间段的提交列表。
+                2. 仅根据 MCP 返回的结果回答，不要编造。
+                3. 如果 MCP 未配置或调用失败，说明原因并提示用户在 Dify 中配置 MCP 服务器与工具。
+                4. 始终用中文回答。
+            maximum_iterations:
+              type: constant
+              value: 6
+            model:
+              type: constant
+              value:
+                completion_params:
+                  temperature: 0.2
+                mode: chat
+                model: gpt-4o
+                model_type: llm
+                provider: openai
+                type: model-selector
+            query:
+              type: constant
+              value: '{{#sys.query#}}'
+            tools:
+              type: constant
+              value:
+                - enabled: true
+                  extra:
+                    description: ''
+                  parameters: {}
+                  provider_name: time
+                  schemas:
+                    - auto_generate: null
+                      default: '%Y-%m-%d %H:%M:%S'
+                      form: form
+                      human_description:
+                        en_US: Time format in strftime standard.
+                        ja_JP: Time format in strftime standard.
+                        pt_BR: Time format in strftime standard.
+                        zh_Hans: strftime 标准的时间格式。
+                      label:
+                        en_US: Format
+                        ja_JP: Format
+                        pt_BR: Format
+                        zh_Hans: 格式
+                      llm_description: null
+                      max: null
+                      min: null
+                      name: format
+                      options: []
+                      placeholder: null
+                      precision: null
+                      required: false
+                      scope: null
+                      template: null
+                      type: string
+                    - auto_generate: null
+                      default: UTC
+                      form: form
+                      human_description:
+                        en_US: Timezone
+                        ja_JP: Timezone
+                        pt_BR: Timezone
+                        zh_Hans: 时区
+                      label:
+                        en_US: Timezone
+                        ja_JP: Timezone
+                        pt_BR: Timezone
+                        zh_Hans: 时区
+                      llm_description: null
+                      max: null
+                      min: null
+                      name: timezone
+                      options:
+                        - label:
+                            en_US: UTC
+                            ja_JP: UTC
+                            pt_BR: UTC
+                            zh_Hans: UTC
+                          value: UTC
+                        - label:
+                            en_US: America/New_York
+                            ja_JP: America/New_York
+                            pt_BR: America/New_York
+                            zh_Hans: 美洲/纽约
+                          value: America/New_York
+                        - label:
+                            en_US: America/Los_Angeles
+                            ja_JP: America/Los_Angeles
+                            pt_BR: America/Los_Angeles
+                            zh_Hans: 美洲/洛杉矶
+                          value: America/Los_Angeles
+                        - label:
+                            en_US: America/Chicago
+                            ja_JP: America/Chicago
+                            pt_BR: America/Chicago
+                            zh_Hans: 美洲/芝加哥
+                          value: America/Chicago
+                        - label:
+                            en_US: America/Sao_Paulo
+                            ja_JP: America/Sao_Paulo
+                            pt_BR: América/São Paulo
+                            zh_Hans: 美洲/圣保罗
+                          value: America/Sao_Paulo
+                        - label:
+                            en_US: Asia/Shanghai
+                            ja_JP: Asia/Shanghai
+                            pt_BR: Asia/Shanghai
+                            zh_Hans: 亚洲/上海
+                          value: Asia/Shanghai
+                        - label:
+                            en_US: Asia/Ho_Chi_Minh
+                            ja_JP: Asia/Ho_Chi_Minh
+                            pt_BR: Ásia/Ho Chi Minh
+                            zh_Hans: 亚洲/胡志明市
+                          value: Asia/Ho_Chi_Minh
+                        - label:
+                            en_US: Asia/Tokyo
+                            ja_JP: Asia/Tokyo
+                            pt_BR: Asia/Tokyo
+                            zh_Hans: 亚洲/东京
+                          value: Asia/Tokyo
+                        - label:
+                            en_US: Asia/Dubai
+                            ja_JP: Asia/Dubai
+                            pt_BR: Asia/Dubai
+                            zh_Hans: 亚洲/迪拜
+                          value: Asia/Dubai
+                        - label:
+                            en_US: Asia/Kolkata
+                            ja_JP: Asia/Kolkata
+                            pt_BR: Asia/Kolkata
+                            zh_Hans: 亚洲/加尔各答
+                          value: Asia/Kolkata
+                        - label:
+                            en_US: Europe/London
+                            ja_JP: Europe/London
+                            pt_BR: Europe/London
+                            zh_Hans: 欧洲/伦敦
+                          value: Europe/London
+                        - label:
+                            en_US: Europe/Berlin
+                            ja_JP: Europe/Berlin
+                            pt_BR: Europe/Berlin
+                            zh_Hans: 欧洲/柏林
+                          value: Europe/Berlin
+                        - label:
+                            en_US: Europe/Moscow
+                            ja_JP: Europe/Moscow
+                            pt_BR: Europe/Moscow
+                            zh_Hans: 欧洲/莫斯科
+                          value: Europe/Moscow
+                        - label:
+                            en_US: Australia/Sydney
+                            ja_JP: Australia/Sydney
+                            pt_BR: Australia/Sydney
+                            zh_Hans: 澳大利亚/悉尼
+                          value: Australia/Sydney
+                        - label:
+                            en_US: Pacific/Auckland
+                            ja_JP: Pacific/Auckland
+                            pt_BR: Pacific/Auckland
+                            zh_Hans: 太平洋/奥克兰
+                          value: Pacific/Auckland
+                        - label:
+                            en_US: Africa/Cairo
+                            ja_JP: Africa/Cairo
+                            pt_BR: Africa/Cairo
+                            zh_Hans: 非洲/开罗
+                          value: Africa/Cairo
+                      placeholder: null
+                      precision: null
+                      required: false
+                      scope: null
+                      template: null
+                      type: select
+                  settings:
+                    format:
+                      value: '%Y-%m-%d %H:%M:%S'
+                    timezone:
+                      value: UTC
+                  tool_label: Current Time
+                  tool_name: current_time
+                  type: builtin
+          agent_strategy_label: mcpReAct
+          agent_strategy_name: mcpReAct
+          agent_strategy_provider_name: 3dify-project/mcp_client/agent
+          desc: Fetch last week's commits from GitLab via MCP.
+          output_schema: null
+          plugin_unique_identifier: null
+          selected: false
+          title: MCP Agent
+          type: agent
+        height: 197
+        id: mcp_agent
+        position:
+          x: 360
+          y: 120
+        positionAbsolute:
+          x: 360
+          y: 120
+        selected: false
+        type: custom
+        width: 560
+      - data:
+          answer: '{{#mcp_agent.text#}}'
+          desc: ''
+          selected: false
+          title: Answer
+          type: answer
+          variables: []
+        height: 107
+        id: answer
+        position:
+          x: 1320
+          y: 120
+        positionAbsolute:
+          x: 1320
+          y: 120
+        selected: false
+        type: custom
+        width: 244
